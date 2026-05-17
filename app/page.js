@@ -4,12 +4,18 @@ import { useState, useEffect, useCallback } from "react";
 import { SUBJECTS, SUBJECT_COLOR, timeAgo } from "@/lib/constants";
 import * as Store from "@/lib/store";
 import { auth, googleProvider } from "@/lib/firebase";
-import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 
 export default function Home() {
   // === 앱 상태 ===
   const [user, setUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
+
+  // 이메일 폼 상태
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
 
   const [isStarted, setIsStarted] = useState(false);
   const [currentSubject, setCurrentSubject] = useState("전체");
@@ -43,13 +49,48 @@ export default function Home() {
     loadData();
   }, [loadData]);
 
+  // 이메일 로그인/회원가입 핸들러
+  const handleEmailAuth = async (e) => {
+    e.preventDefault();
+    if (!email || !password) {
+      alert("이메일과 비밀번호를 모두 입력해 주세요.");
+      return;
+    }
+
+    try {
+      if (isLoginMode) {
+        // 로그인
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        // 회원가입
+        if (!name) {
+          alert("이름을 입력해 주세요.");
+          return;
+        }
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName: name });
+        // 업데이트된 정보를 반영하기 위해 user 상태를 강제로 업데이트 (onAuthStateChanged가 잡겠지만 빠른 반영을 위해)
+        setUser({ ...userCredential.user, displayName: name });
+      }
+    } catch (error) {
+      console.error("이메일 인증 에러:", error);
+      if (error.code === 'auth/email-already-in-use') {
+        alert("이미 사용 중인 이메일입니다.");
+      } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        alert("이메일 또는 비밀번호가 올바르지 않습니다.");
+      } else {
+        alert("오류가 발생했습니다: " + error.message);
+      }
+    }
+  };
+
   // 구글 로그인 핸들러
-  const handleLogin = async () => {
+  const handleGoogleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
       console.error("로그인 에러:", error);
-      alert("로그인 중 오류가 발생했습니다.");
+      alert("구글 로그인 중 오류가 발생했습니다.");
     }
   };
 
@@ -92,10 +133,49 @@ export default function Home() {
         <div className="login-container">
           <h1 className="login-title">ClassBoard</h1>
           <p className="login-subtitle">우리 반 Q&A 공간에 오신 것을 환영합니다!</p>
-          <button className="btn-google" onClick={handleLogin}>
+
+          <form className="auth-form" onSubmit={handleEmailAuth}>
+            {!isLoginMode && (
+              <input
+                type="text"
+                className="auth-input"
+                placeholder="이름 (닉네임)"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            )}
+            <input
+              type="email"
+              className="auth-input"
+              placeholder="이메일 주소"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <input
+              type="password"
+              className="auth-input"
+              placeholder="비밀번호 (6자리 이상)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <button type="submit" className="btn btn-primary auth-btn">
+              {isLoginMode ? "이메일로 로그인" : "회원가입하기"}
+            </button>
+          </form>
+
+          <div className="auth-divider">또는</div>
+
+          <button className="btn-google" onClick={handleGoogleLogin}>
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="24" />
-            Google 계정으로 시작하기
+            구글로 계속하기
           </button>
+
+          <div className="auth-toggle">
+            {isLoginMode ? "아직 계정이 없으신가요?" : "이미 계정이 있으신가요?"}
+            <span onClick={() => setIsLoginMode(!isLoginMode)}>
+              {isLoginMode ? "회원가입" : "로그인"}
+            </span>
+          </div>
         </div>
       </div>
     );
