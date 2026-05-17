@@ -825,3 +825,79 @@ html, body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* === 로그인 화면 === */
+.login-page {
+  position: fixed;
+  inset: 0;
+  background-color: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.login-container {
+  background: var(--bg-secondary);
+  padding: 40px;
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  text-align: center;
+  width: 100%;
+  max-width: 400px;
+  border: 1px solid var(--border);
+}
+
+.login-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.login-subtitle {
+  font-size: 15px;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+}
+
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 30px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: #333333;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-google:hover {
+  background: #f8f9fa;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.btn-logout {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-logout:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}

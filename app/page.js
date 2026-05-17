@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { SUBJECTS, SUBJECT_COLOR, currentUser, timeAgo } from "@/lib/constants";
+import { SUBJECTS, SUBJECT_COLOR, timeAgo } from "@/lib/constants";
 import * as Store from "@/lib/store";
+import { auth, googleProvider } from "@/lib/firebase";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 
 export default function Home() {
   // === 앱 상태 ===
+  const [user, setUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
   const [isStarted, setIsStarted] = useState(false);
   const [currentSubject, setCurrentSubject] = useState("전체");
   const [searchQuery, setSearchQuery] = useState("");
@@ -16,23 +21,41 @@ export default function Home() {
   const [modal, setModal] = useState(null); // null | 'newQuestion' | 'newNotice' | 'questionDetail' | 'noticeDetail'
   const [selectedId, setSelectedId] = useState(null);
 
+  // === 로그인 상태 리스너 ===
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthChecking(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // === 데이터 로드 ===
   const loadData = useCallback(async () => {
+    if (!user) return;
     const qList = await Store.getAll("questions");
     const nList = await Store.getAll("notices");
     setQuestions(qList);
     setNotices(nList);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  // 구글 로그인 핸들러
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("로그인 에러:", error);
+      alert("로그인 중 오류가 발생했습니다.");
+    }
+  };
+
   // === 필터링된 질문 목록 ===
   const filteredQuestions = questions.filter((q) => {
-    // 과목 필터
     if (currentSubject !== "전체" && q.subject !== currentSubject) return false;
-    // 검색 필터
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return (
@@ -43,17 +66,40 @@ export default function Home() {
     return true;
   });
 
-  // === 과목별 질문 수 ===
   const getSubjectCount = (subjectName) => {
     if (subjectName === "전체") return questions.length;
     return questions.filter((q) => q.subject === subjectName).length;
   };
 
-  // === 모달 닫기 ===
   const closeModal = () => {
     setModal(null);
     setSelectedId(null);
   };
+
+  // 로딩 화면
+  if (authChecking) {
+    return (
+      <div className="login-page">
+        <div style={{ color: "white", fontSize: "18px" }}>로딩 중...</div>
+      </div>
+    );
+  }
+
+  // 로그인 화면
+  if (!user) {
+    return (
+      <div className="login-page">
+        <div className="login-container">
+          <h1 className="login-title">ClassBoard</h1>
+          <p className="login-subtitle">우리 반 Q&A 공간에 오신 것을 환영합니다!</p>
+          <button className="btn-google" onClick={handleLogin}>
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="24" />
+            Google 계정으로 시작하기
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // 대문(랜딩) 페이지 화면
   if (!isStarted) {
@@ -75,7 +121,6 @@ export default function Home() {
 
   return (
     <div className="app">
-      {/* 헤더 */}
       <header className="app-header">
         <div className="logo">
           <span className="logo-icon">📚</span>
@@ -88,14 +133,17 @@ export default function Home() {
           </div>
         </div>
         <div className="user-info">
-          <div className="user-avatar">👤</div>
-          <span className="user-name">{currentUser.name}</span>
+          {user.photoURL ? (
+            <img src={user.photoURL} alt="avatar" className="user-avatar" style={{ border: 'none', objectFit: 'cover' }} />
+          ) : (
+            <div className="user-avatar">👤</div>
+          )}
+          <span className="user-name">{user.displayName || "학생"}</span>
+          <button className="btn-logout" onClick={() => signOut(auth)}>로그아웃</button>
         </div>
       </header>
 
-      {/* 3단 레이아웃 */}
       <main className="app-body">
-        {/* 왼쪽: 과목 필터 */}
         <aside className="sidebar sidebar-left">
           <h2 className="sidebar-title">📂 과목</h2>
           <nav className="subject-list">
@@ -120,7 +168,6 @@ export default function Home() {
           </nav>
         </aside>
 
-        {/* 가운데: 질문 게시판 */}
         <section className="main-content">
           <div className="content-header">
             <h1 className="content-title">💬 질문 게시판</h1>
@@ -163,7 +210,6 @@ export default function Home() {
           )}
         </section>
 
-        {/* 오른쪽: 공지사항 */}
         <aside className="sidebar sidebar-right">
           <div className="sidebar-header">
             <h2 className="sidebar-title">📌 공지사항</h2>
@@ -198,19 +244,20 @@ export default function Home() {
         </aside>
       </main>
 
-      {/* 모달 */}
       {modal && (
         <ModalOverlay onClose={closeModal}>
           {modal === "newQuestion" && (
             <NewQuestionModal
               onClose={closeModal}
               onSubmit={loadData}
+              user={user}
             />
           )}
           {modal === "newNotice" && (
             <NewNoticeModal
               onClose={closeModal}
               onSubmit={loadData}
+              user={user}
             />
           )}
           {modal === "questionDetail" && selectedId && (
@@ -218,6 +265,7 @@ export default function Home() {
               questionId={selectedId}
               onClose={closeModal}
               onUpdate={loadData}
+              user={user}
             />
           )}
           {modal === "noticeDetail" && selectedId && (
@@ -232,9 +280,6 @@ export default function Home() {
   );
 }
 
-/* ============================================
-   질문 카드 컴포넌트
-   ============================================ */
 function QuestionCard({ question, onClick }) {
   const q = question;
   const color = SUBJECT_COLOR[q.subject] || "#8899aa";
@@ -267,9 +312,6 @@ function QuestionCard({ question, onClick }) {
   );
 }
 
-/* ============================================
-   모달 오버레이
-   ============================================ */
 function ModalOverlay({ children, onClose }) {
   return (
     <div className="modal-overlay active" onClick={(e) => {
@@ -280,10 +322,7 @@ function ModalOverlay({ children, onClose }) {
   );
 }
 
-/* ============================================
-   새 질문 작성 모달
-   ============================================ */
-function NewQuestionModal({ onClose, onSubmit }) {
+function NewQuestionModal({ onClose, onSubmit, user }) {
   const [subject, setSubject] = useState("국어");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -299,8 +338,8 @@ function NewQuestionModal({ onClose, onSubmit }) {
       subject,
       title: title.trim(),
       content: content.trim(),
-      userId: currentUser.id,
-      userName: currentUser.name,
+      userId: user.uid,
+      userName: user.displayName || "학생",
       createdAt: Date.now(),
       likeCount: 0,
       likedBy: [],
@@ -362,20 +401,15 @@ function NewQuestionModal({ onClose, onSubmit }) {
   );
 }
 
-/* ============================================
-   질문 상세 모달
-   ============================================ */
-function QuestionDetailModal({ questionId, onClose, onUpdate }) {
+function QuestionDetailModal({ questionId, onClose, onUpdate, user }) {
   const [question, setQuestion] = useState(null);
   const [answers, setAnswers] = useState([]);
   const [answerText, setAnswerText] = useState("");
 
-  // 데이터 로드
   const loadDetail = useCallback(async () => {
     const q = await Store.getById("questions", questionId);
     setQuestion(q);
     if (q) {
-      // 답변 가져오기 (해당 질문에 대한 답변만, 오래된 순)
       const allAnswers = await Store.getAll("answers");
       const filteredAnswers = allAnswers
         .filter((a) => a.questionId === questionId)
@@ -391,14 +425,13 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
   if (!question) return <div className="modal-body">로딩 중...</div>;
 
   const color = SUBJECT_COLOR[question.subject] || "#8899aa";
-  const isLiked = (question.likedBy || []).includes(currentUser.id);
-  const isOwner = question.userId === currentUser.id;
+  const isLiked = (question.likedBy || []).includes(user.uid);
+  const isOwner = question.userId === user.uid;
 
-  // 좋아요 토글
   const handleLikeQuestion = async () => {
     const likedBy = [...(question.likedBy || [])];
-    const idx = likedBy.indexOf(currentUser.id);
-    if (idx === -1) likedBy.push(currentUser.id);
+    const idx = likedBy.indexOf(user.uid);
+    if (idx === -1) likedBy.push(user.uid);
     else likedBy.splice(idx, 1);
     
     await Store.update("questions", questionId, {
@@ -409,7 +442,6 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
     onUpdate();
   };
 
-  // 답변 등록
   const handleSubmitAnswer = async () => {
     if (!answerText.trim()) {
       alert("답변 내용을 입력해 주세요!");
@@ -418,8 +450,8 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
     await Store.add("answers", {
       questionId,
       content: answerText.trim(),
-      userId: currentUser.id,
-      userName: currentUser.name,
+      userId: user.uid,
+      userName: user.displayName || "학생",
       createdAt: Date.now(),
       likeCount: 0,
       likedBy: [],
@@ -432,13 +464,12 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
     onUpdate();
   };
 
-  // 답변 좋아요
   const handleLikeAnswer = async (answerId) => {
     const answer = await Store.getById("answers", answerId);
     if (!answer) return;
     const likedBy = [...(answer.likedBy || [])];
-    const idx = likedBy.indexOf(currentUser.id);
-    if (idx === -1) likedBy.push(currentUser.id);
+    const idx = likedBy.indexOf(user.uid);
+    if (idx === -1) likedBy.push(user.uid);
     else likedBy.splice(idx, 1);
     
     await Store.update("answers", answerId, {
@@ -448,7 +479,6 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
     loadDetail();
   };
 
-  // 베스트 답변 채택
   const handleBestAnswer = async (answerId) => {
     await Store.update("questions", questionId, { bestAnswerId: answerId });
     loadDetail();
@@ -481,12 +511,11 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
           </button>
         </div>
 
-        {/* 답변 섹션 */}
         <div className="answers-section">
           <h3 className="answers-title">💬 답변 {answers.length}개</h3>
           {answers.map((a) => {
             const isBest = question.bestAnswerId === a.id;
-            const aLiked = (a.likedBy || []).includes(currentUser.id);
+            const aLiked = (a.likedBy || []).includes(user.uid);
             return (
               <div
                 key={a.id}
@@ -522,7 +551,6 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
             );
           })}
 
-          {/* 답변 작성 */}
           <div className="answer-form">
             <textarea
               placeholder="답변을 작성해 주세요..."
@@ -541,10 +569,7 @@ function QuestionDetailModal({ questionId, onClose, onUpdate }) {
   );
 }
 
-/* ============================================
-   새 공지 작성 모달
-   ============================================ */
-function NewNoticeModal({ onClose, onSubmit }) {
+function NewNoticeModal({ onClose, onSubmit, user }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -558,8 +583,8 @@ function NewNoticeModal({ onClose, onSubmit }) {
     await Store.add("notices", {
       title: title.trim(),
       content: content.trim(),
-      userId: currentUser.id,
-      userName: currentUser.name,
+      userId: user.uid,
+      userName: user.displayName || "선생님",
       createdAt: Date.now(),
     });
     onSubmit();
@@ -603,9 +628,6 @@ function NewNoticeModal({ onClose, onSubmit }) {
   );
 }
 
-/* ============================================
-   공지 상세 모달
-   ============================================ */
 function NoticeDetailModal({ noticeId, onClose }) {
   const [notice, setNotice] = useState(null);
 
